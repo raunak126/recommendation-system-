@@ -1,0 +1,141 @@
+import numpy as np
+import pandas as pd 
+import pickle 
+
+# Using Datasets 
+books = pd.read_csv(r'D:\programs\projects\Book Recommendation System Project\books.csv')
+ratings = pd.read_csv(r'D:\programs\projects\Book Recommendation System Project\ratings.csv')
+users = pd.read_csv(r'D:\programs\projects\Book Recommendation System Project\users.csv')
+
+# print(ratings.head())
+
+# ---------------------------------
+# To check total number of rows in books dataset
+# print(books.shape) 
+
+# To check total number of rows in users dataset
+# print(users.shape) 
+
+# To check total number of rows in ratings dataset
+# print(ratings.shape) 
+
+# ---------------------------------
+# print(books.isnull().sum()) #To check the count of missing values in the books dataset
+
+# print(users.isnull().sum()) #To check the count of missing values in the users dataset
+
+# ---------------------------------
+# print(books.duplicated().sum()) # To check the count of duplicate values 
+
+# print(ratings.duplicated().sum()) #To check the  count of duplicate values 
+
+# print(users.duplicated().sum()) #To check the count of duplicate values 
+
+# ---------------------------------
+
+# Popularity Based Recommendation System 
+# It will display the top 50 books, with highest avg ratings, which have got a minimum of 250 votes
+
+# merging the dataset: rating + books, column ISBN
+ratings_with_name = ratings.merge(books, on="ISBN") #book names with ratings 
+# print(ratings_with_name)
+
+num_rating_df = ratings_with_name.groupby('Book-Title').count()['Book-Rating'].reset_index() #book names with the count of ratings 
+num_rating_df.rename(columns={"Book-Rating":"num_ratings"},inplace=True)
+# print(num_rating_df)
+
+avg_rating_df = ratings_with_name.groupby('Book-Title').count()['Book-Rating'].reset_index() #average rating on a particular book
+avg_rating_df.rename(columns={"Book-Rating":"avg_ratings"},inplace=True)
+# print(avg_rating_df)
+
+popularity_df = num_rating_df.merge(avg_rating_df,on='Book-Title') #merging number of books and avergae rating 
+# print(popularity_df)
+
+# ---------------------------------
+# To get books with more than 250 ratings 
+popularity_df_new = popularity_df[popularity_df['num_ratings']>=250]
+# print(popularity_df_new)
+
+# sorting values on basis of avg_rating in descending order
+sorted_popularity_df = popularity_df[popularity_df['num_ratings']>=250].sort_values('avg_ratings',ascending=False)
+# print(sorted_popularity_df)
+
+# ---------------------------------
+# retrieve top 20 books from the sorted data 
+sorted_popularity_df = sorted_popularity_df.head(20)
+# print(sorted_popularity_df)
+
+# retrieving all the required data 
+sorted_popularity_df = sorted_popularity_df.merge(books,on='Book-Title').drop_duplicates('Book-Title')[['Book-Title','Book-Author','Image-URL-M','num_ratings','avg_ratings']]
+# print(sorted_popularity_df)
+
+# ==================================
+
+# Collaborative Filtering Based Recommender System
+
+ratings_with_name = ratings.merge(books,on='ISBN')
+
+# soring out the users, those who have rated more than 200 books
+x = ratings_with_name.groupby('User-ID').count()['Book-Rating']>200 #boolean indexing
+sorted_users = x[x].index 
+
+filtered_rating = ratings_with_name[ratings_with_name['User-ID'].isin(sorted_users)]
+# print(filtered_rating)
+
+y = filtered_rating.groupby('Book-Title').count()['Book-Rating']>=50 #boolean indexing
+famous_books = y[y].index
+
+final_ratings = filtered_rating[filtered_rating['Book-Title'].isin(famous_books)]
+# print(final_ratings)
+
+# checking duplicates
+print(final_ratings.drop_duplicates())
+
+# no duplicates found 
+
+# creating pivot table 
+pivot_t = final_ratings.pivot_table(index='Book-Title', columns='User-ID',values='Book-Rating')
+pivot_t.fillna(0,inplace=True)
+print(pivot_t)
+
+# Using Cosine Similarity
+from sklearn.metrics.pairwise import cosine_similarity
+similarity_score = cosine_similarity(pivot_t)
+print(similarity_score)
+
+# checking its size
+print(similarity_score.shape)
+
+# ============================
+
+def recommend(bookname):
+    # to fetch the index 
+    ind = np.where(pivot_t.index==bookname)[0][0]
+    s_items = sorted(list(enumerate(similarity_score[ind])),key=lambda x:x[1],reverse=True)[1:6] #top 5 suggestions 
+    data=[]
+
+    for i in s_items:
+        item = []
+
+        print(pivot_t.index[i[0]])
+        temp_df = books[books['Book-Title'] == pivot_t.index[i[0]]]
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Book-Title'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Author')['Book-Author'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Image-URL-M'].values))
+
+        data.append(item)
+    return data 
+        
+
+
+
+print(recommend('The Notebook'))
+
+print(sorted_popularity_df['Image-URL-M'][1])
+
+# Exporting this file
+pickle.dump(sorted_popularity_df,open('popular.pkl','wb'))
+
+pickle.dump(pivot_t,open('pt.pkl','wb'))
+pickle.dump(books,open('books.pkl','wb'))
+pickle.dump(similarity_score,open('similarity.pkl','wb'))
